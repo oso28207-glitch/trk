@@ -1,7 +1,6 @@
 temp_videos/
 __pycache__/
 *.pyc
-.env
 venv/
-.idea/
-.vscode/
+.env
+.DS_Store
