@@ -3,9 +3,9 @@ nixPkgs = ["python311", "ffmpeg"]
 
 [phases.install]
 cmds = [
-  "cd backend && python -m ensurepip --upgrade",
-  "cd backend && python -m pip install --break-system-packages -r requirements.txt"
+  "cd backend && python -m venv --copies venv",
+  "cd backend && venv/bin/pip install -r requirements.txt"
 ]
 
 [start]
-cmd = "cd backend && python app.py"
+cmd = "cd backend && venv/bin/python app.py"
