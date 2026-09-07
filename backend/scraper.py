@@ -1,63 +1,41 @@
-import requests
+import cloudscraper
 import time
 
 BASE_URL = "https://esheq1.store/wp-json/esheeq/v1"
 
-# قائمة بروكسيات مجانية (قد لا تعمل كلها، جرب واحدة)
-# مصادر مثل: https://free-proxy-list.net/
-PROXY = {
-    "http": "http://45.155.205.233:8888",   # غير صالح، جرب استبداله بآخر من الموقع أعلاه
-    "https": "https://45.155.205.233:8888"
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
 }
 
+def safe_request(url, params=None, max_retries=3):
+    scraper = cloudscraper.create_scraper()
+    for attempt in range(max_retries):
+        try:
+            response = scraper.get(url, params=params, headers=HEADERS, timeout=30)
+            if response.status_code == 200:
+                return response.json()
+            print(f"حالة غير متوقعة: {response.status_code}")
+        except Exception as e:
+            print(f"خطأ (محاولة {attempt+1}): {e}")
+            time.sleep(2)
+    return None
+
 def get_all_series():
-    """جلب قائمة جميع المسلسلات"""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-        # حاول بدون بروكسي أولاً (قد يعمل أحياناً)
-        response = requests.get(f"{BASE_URL}/series", headers=headers, timeout=10)
-        # إذا فشل، جرب بالبروكسي
-        if response.status_code != 200:
-            response = requests.get(f"{BASE_URL}/series", headers=headers, proxies=PROXY, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("series", [])
-    except Exception as e:
-        print(f"خطأ في جلب المسلسلات: {e}")
-        # في حالة الفشل، نعيد بيانات وهمية لتجربة واجهة الموقع
-        return [{"id": 1, "title": "مسلسل تجريبي (تعذر الاتصال)"}]
+    data = safe_request(f"{BASE_URL}/series")
+    if data and "series" in data:
+        return data["series"]
+    return [{"id": 1, "title": "مسلسل تجريبي (تعذر الاتصال)", "slug": "test"}]
 
 def get_series_episodes(series_id):
-    """جلب حلقات مسلسل معين"""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(f"{BASE_URL}/series/{series_id}/episodes", headers=headers, timeout=10)
-        if response.status_code != 200:
-            response = requests.get(f"{BASE_URL}/series/{series_id}/episodes", headers=headers, proxies=PROXY, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("episodes", [])
-    except Exception as e:
-        print(f"خطأ في جلب الحلقات: {e}")
-        return []
+    data = safe_request(f"{BASE_URL}/series/{series_id}/episodes")
+    if data and "episodes" in data:
+        return data["episodes"]
+    return []
 
 def get_video_download_url(episode_id):
-    """الحصول على رابط التحميل المباشر"""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(f"{BASE_URL}/get-video/{episode_id}", headers=headers, timeout=10)
-        if response.status_code != 200:
-            response = requests.get(f"{BASE_URL}/get-video/{episode_id}", headers=headers, proxies=PROXY, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        mp4_urls = data.get("video_urls", {}).get("mp4", [])
+    data = safe_request(f"{BASE_URL}/get-video/{episode_id}")
+    if data and "video_urls" in data:
+        mp4_urls = data["video_urls"].get("mp4", [])
         return mp4_urls[0] if mp4_urls else None
-    except Exception as e:
-        print(f"خطأ في جلب رابط الفيديو: {e}")
-        return None
+    return None
