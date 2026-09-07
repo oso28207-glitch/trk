@@ -6,13 +6,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoPlayer = document.getElementById('video-player');
     const progressFill = document.getElementById('progress-fill');
     const progressText = document.getElementById('progress-text');
+    const statusMessage = document.getElementById('status-message');
     const loadingDiv = document.getElementById('loading');
     const seriesTitle = document.getElementById('series-title');
 
     let currentTaskId = null;
     let progressInterval = null;
 
-    // 1. جلب قائمة المسلسلات
+    // جلب المسلسلات
     fetch('/api/series')
         .then(res => res.json())
         .then(series => {
@@ -27,7 +28,6 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .catch(err => alert('حدث خطأ في تحميل المسلسلات: ' + err));
 
-    // 2. جلب الحلقات لمسلسل معين
     function loadEpisodes(seriesId, title) {
         episodesSection.style.display = 'block';
         seriesTitle.textContent = `📺 ${title}`;
@@ -45,7 +45,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const btn = document.createElement('button');
                     btn.textContent = `الحلقة ${ep.episode_number || ep.id}`;
                     btn.dataset.id = ep.id;
-                    btn.onclick = () => watchEpisode(ep.id);
+                    btn.dataset.url = ep.link; // الرابط الكامل للحلقة
+                    btn.onclick = () => watchEpisode(ep.link);
                     episodesList.appendChild(btn);
                 });
             })
@@ -55,14 +56,15 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     }
 
-    // 3. تشغيل حلقة (طلب تحميل وضغط)
-    function watchEpisode(episodeId) {
+    function watchEpisode(episodeUrl) {
         // إخفاء المشغل القديم وإظهار شريط التقدم
-        playerSection.style.display = 'none';
+        playerSection.style.display = 'block';
+        videoPlayer.style.display = 'none';
         videoPlayer.src = '';
         loadingDiv.style.display = 'block';
         progressFill.style.width = '0%';
         progressText.textContent = '0%';
+        statusMessage.textContent = 'جارٍ بدء العملية...';
 
         if (progressInterval) {
             clearInterval(progressInterval);
@@ -72,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch('/api/watch', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ episode_id: episodeId })
+            body: JSON.stringify({ episode_url: episodeUrl })
         })
         .then(res => res.json())
         .then(data => {
@@ -83,7 +85,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             currentTaskId = data.task_id;
             loadingDiv.style.display = 'none';
-            playerSection.style.display = 'block';
             startPolling(currentTaskId);
         })
         .catch(err => {
@@ -92,7 +93,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 4. استطلاع حالة التقدم
     function startPolling(taskId) {
         if (progressInterval) clearInterval(progressInterval);
 
@@ -102,11 +102,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 .then(status => {
                     progressFill.style.width = status.progress + '%';
                     progressText.textContent = status.progress + '%';
+                    statusMessage.textContent = status.message || '';
 
                     if (status.status === 'completed') {
                         clearInterval(progressInterval);
                         progressInterval = null;
                         // تحميل الفيديو في المشغل
+                        videoPlayer.style.display = 'block';
                         videoPlayer.src = `/api/video/${taskId}`;
                         videoPlayer.load();
                         videoPlayer.play().catch(() => {});
@@ -114,11 +116,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         setTimeout(() => {
                             progressFill.style.width = '0%';
                             progressText.textContent = 'جاهز';
+                            statusMessage.textContent = 'جاهز للمشاهدة';
                         }, 3000);
                     } else if (status.status === 'error') {
                         clearInterval(progressInterval);
                         progressInterval = null;
                         alert('حدث خطأ: ' + status.error);
+                        statusMessage.textContent = 'فشل: ' + status.error;
                         progressText.textContent = 'خطأ';
                     }
                 })
