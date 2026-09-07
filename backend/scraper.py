@@ -1,162 +1,218 @@
 import cloudscraper
-import requests
-from bs4 import BeautifulSoup
-import re
 import time
-from urllib.parse import urljoin, urlparse
+import re
+import json
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import shutil
+import os
 
-# رؤوس تحاكي المتصفح
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
     'Accept-Language': 'ar,en;q=0.9',
     'Referer': 'https://esheq1.store/',
     'Origin': 'https://esheq1.store',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
 }
 
-def extract_servers_from_page(page_url):
-    """
-    يستخرج روابط السيرفرات (data-src) من صفحة /see/
-    """
+def setup_selenium():
+    """إعداد متصفح Chrome في وضع headless"""
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--disable-notifications')
+    chrome_options.add_argument('--ignore-certificate-errors')
+    
+    chromedriver_path = '/usr/bin/chromedriver'
+    if not os.path.exists(chromedriver_path):
+        chromedriver_path = shutil.which('chromedriver')
+        if not chromedriver_path:
+            print("❌ لم يتم العثور على chromedriver")
+            return None
+    
     try:
-        scraper = cloudscraper.create_scraper()
-        response = scraper.get(page_url, headers=HEADERS, timeout=20)
-        
-        if response.status_code != 200:
-            print(f"⚠️ فشل جلب الصفحة: {response.status_code}")
-            return []
+        service = Service(executable_path=chromedriver_path)
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
+    except Exception as e:
+        print(f"❌ فشل إعداد Selenium: {e}")
+        return None
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+def extract_servers_with_selenium(page_url):
+    """استخدام Selenium لاستخراج السيرفرات من صفحة /see/"""
+    driver = setup_selenium()
+    if not driver:
+        return []
+    
+    try:
+        print(f"🖥️ فتح الصفحة بـ Selenium: {page_url}")
+        driver.get(page_url)
+        time.sleep(5)
         
         # البحث عن قائمة السيرفرات
-        server_items = soup.select('.serversList li')
         servers = []
-        for li in server_items:
-            data_src = li.get('data-src')
-            if data_src:
-                # تنظيف الرابط من &amp; إلى &
-                data_src = data_src.replace('&amp;', '&')
-                servers.append(data_src)
+        try:
+            server_list = driver.find_element(By.CSS_SELECTOR, "ul.serversList")
+            items = server_list.find_elements(By.TAG_NAME, "li")
+            for item in items:
+                data_src = item.get_attribute("data-src")
+                if data_src:
+                    data_src = data_src.replace('&amp;', '&')
+                    servers.append(data_src)
+        except:
+            pass
         
-        # إذا لم نجد شيئاً، نحاول البحث عن iframe داخل .watch
+        # إذا لم نجد، نبحث عن iframe في .watch
         if not servers:
-            watch_div = soup.select_one('.watch')
-            if watch_div:
-                iframe = watch_div.find('iframe')
-                if iframe and iframe.get('src'):
-                    servers.append(iframe['src'])
+            try:
+                iframe = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
+                src = iframe.get_attribute("src")
+                if src:
+                    servers.append(src)
+            except:
+                pass
         
-        # إزالة التكرارات
-        servers = list(dict.fromkeys(servers))
-        print(f"✅ تم العثور على {len(servers)} سيرفرات")
-        return servers
-    
+        driver.quit()
+        return list(dict.fromkeys(servers))
     except Exception as e:
-        print(f"❌ خطأ في استخراج السيرفرات: {e}")
+        print(f"❌ خطأ في Selenium: {e}")
+        driver.quit()
         return []
 
-def try_server(embed_url, timeout=25):
-    """
-    محاولة استخراج رابط الفيديو النهائي من رابط السيرفر
-    """
+def extract_video_from_uqload(driver, url):
+    """استخراج رابط الفيديو من Uqload"""
     try:
-        # إعداد جلسة مع رؤوس خاصة للسيرفر
-        session = cloudscraper.create_scraper()
+        if 'uqload.to' in url:
+            url = url.replace('uqload.to', 'uqload.is')
+        print(f"🔄 فتح Uqload: {url}")
+        driver.get(url)
+        time.sleep(5)
         
-        # نضيف رؤوس إضافية تحاكي الطلب من داخل الموقع
-        headers = HEADERS.copy()
-        headers['Referer'] = 'https://esheq1.store/'
+        page_source = driver.page_source
         
-        response = session.get(embed_url, headers=headers, timeout=timeout)
+        # البحث عن sources
+        match = re.search(r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]', page_source)
+        if match:
+            return match.group(1)
         
-        if response.status_code != 200:
-            print(f"⚠️ السيرفر {embed_url} رد بـ {response.status_code}")
-            return None
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # 1. البحث عن فيديو مباشر
-        video_tag = soup.find('video')
-        if video_tag and video_tag.get('src'):
-            return video_tag['src']
-        
-        # 2. البحث عن iframe
-        iframe = soup.find('iframe')
-        if iframe and iframe.get('src'):
-            # نستدعي نفس الدالة بشكل متكرر (لتجنب الحلقات اللانهائية نحدد عدد المحاولات)
-            return try_server(iframe['src'], timeout)
-        
-        # 3. البحث عن روابط .m3u8 أو .mp4 في النص
-        video_links = re.findall(r'https?://[^\s"\']+\.(?:m3u8|mp4)', response.text)
-        if video_links:
-            return video_links[0]
-        
-        # 4. البحث عن روابط داخل script tags (قد تكون مشفرة)
-        scripts = soup.find_all('script')
-        for script in scripts:
-            if script.string:
-                found = re.findall(r'https?://[^\s"\']+\.(?:m3u8|mp4)', script.string)
-                if found:
-                    return found[0]
+        # البحث عن أي رابط mp4
+        match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
+        if match:
+            return match.group(1)
         
         return None
-        
     except Exception as e:
-        print(f"❌ خطأ في محاولة السيرفر {embed_url}: {e}")
+        print(f"❌ خطأ في Uqload: {e}")
+        return None
+
+def try_server_with_selenium(embed_url, progress_callback=None):
+    """محاولة استخراج الفيديو من رابط السيرفر باستخدام Selenium"""
+    driver = setup_selenium()
+    if not driver:
+        return None
+    
+    try:
+        # إذا كان الرابط من Uqload
+        if 'uqload' in embed_url:
+            video_url = extract_video_from_uqload(driver, embed_url)
+            driver.quit()
+            return video_url
+        
+        # فتح الرابط مباشرة
+        print(f"🔄 فتح السيرفر: {embed_url}")
+        driver.get(embed_url)
+        time.sleep(5)
+        
+        # البحث عن iframe داخل الصفحة
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        for iframe in iframes:
+            src = iframe.get_attribute("src")
+            if src:
+                print(f"📦 تم العثور على iframe: {src}")
+                # فتح iframe
+                driver.get(src)
+                time.sleep(5)
+                break
+        
+        # البحث عن عنصر الفيديو
+        try:
+            video = driver.find_element(By.TAG_NAME, "video")
+            src = video.get_attribute("src")
+            if src and src.startswith("http"):
+                driver.quit()
+                return src
+        except:
+            pass
+        
+        # البحث عن روابط mp4 أو m3u8 في الصفحة
+        page_source = driver.page_source
+        patterns = [
+            r'(https?://[^"\']+\.mp4[^"\']*)',
+            r'(https?://[^"\']+\.m3u8[^"\']*)',
+            r'file:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
+            r'src:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, page_source, re.IGNORECASE)
+            if match:
+                driver.quit()
+                return match.group(1)
+        
+        driver.quit()
+        return None
+    except Exception as e:
+        print(f"❌ خطأ في السيرفر: {e}")
+        driver.quit()
         return None
 
 def get_video_url_from_episode(episode_url, progress_callback=None):
-    """
-    الدالة الرئيسية: تستقبل رابط الحلقة، وتضيف /see/، ثم تجرب جميع السيرفرات.
-    """
-    # التأكد من أن الرابط كامل
+    """الدالة الرئيسية لاستخراج رابط الفيديو"""
+    # التأكد من الرابط
     if not episode_url.startswith('http'):
         if episode_url.startswith('/'):
             episode_url = 'https://esheq1.store' + episode_url
         else:
             episode_url = 'https://esheq1.store/' + episode_url
     
-    # ✅ إضافة /see/ إلى الرابط
+    # إضافة /see/
     if not episode_url.endswith('/see/'):
         if episode_url.endswith('/'):
             episode_url = episode_url[:-1]
         episode_url = episode_url + '/see/'
     
-    print(f"🔍 جلب السيرفرات من: {episode_url}")
-    
     if progress_callback:
-        progress_callback("جارٍ استخراج قائمة السيرفرات...", 5)
+        progress_callback("جارٍ استخراج السيرفرات...", 10)
     
-    servers = extract_servers_from_page(episode_url)
+    # استخراج السيرفرات
+    servers = extract_servers_with_selenium(episode_url)
     if not servers:
-        return None, "لم يتم العثور على أي سيرفرات في الصفحة. قد تكون الصفحة محمية أو تحتاج إلى تحديث."
+        return None, "لم يتم العثور على سيرفرات"
     
     total = len(servers)
     for idx, embed_url in enumerate(servers):
-        percent = int((idx / total) * 30) + 10
         if progress_callback:
-            progress_callback(f"محاولة السيرفر {idx+1} من {total}...", percent)
+            progress_callback(f"محاولة السيرفر {idx+1}/{total}...", 10 + int((idx/total)*30))
         
-        video_url = try_server(embed_url)
+        video_url = try_server_with_selenium(embed_url)
         if video_url:
-            print(f"✅ تم العثور على رابط صالح: {video_url}")
             if progress_callback:
-                progress_callback(f"تم العثور على رابط من السيرفر {idx+1}", 35)
+                progress_callback(f"تم العثور على رابط", 40)
             return video_url, None
         
-        time.sleep(0.5)  # انتظار بسيط بين المحاولات
+        time.sleep(1)
     
-    return None, "فشلت جميع محاولات العثور على رابط فيديو صالح."
-
-# دالة مساعدة لاختبار الملف مباشرة
-if __name__ == "__main__":
-    test_url = "https://esheq1.store/watch/%d9%85%d8%b3%d9%84%d8%b3%d9%84-%d9%81%d9%8a-%d8%a7%d9%84%d8%b3%d8%a7%d8%a8%d8%b9%d8%a9-%d8%b9%d8%b4%d8%b1-%d8%a7%d9%84%d8%ad%d9%84%d9%82%d8%a9-15-%d9%85%d8%aa%d8%b1%d8%ac%d9%85%d8%a9/"
-    print("🧪 اختبار استخراج السيرفرات...")
-    video_url, error = get_video_url_from_episode(test_url)
-    if video_url:
-        print(f"✅ رابط الفيديو: {video_url}")
-    else:
-        print(f"❌ فشل: {error}")
+    return None, "فشلت جميع السيرفرات"
