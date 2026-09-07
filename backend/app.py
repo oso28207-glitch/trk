@@ -9,13 +9,6 @@ from downloader import download_and_compress, tasks
 app = Flask(__name__, template_folder='../frontend/templates', static_folder='../frontend/static')
 CORS(app)
 
-# تنظيف الملفات القديمة عند التشغيل (اختياري)
-try:
-    from cleaner import clean_old_files
-    clean_old_files()
-except:
-    pass
-
 @app.route('/')
 def index():
     return render_template('index.html')
