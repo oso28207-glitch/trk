@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["python311", "ffmpeg"]
+
+[phases.install]
+cmds = [
+  "cd backend && python -m venv venv",
+  "cd backend && ./venv/bin/python -m pip install --upgrade pip",
+  "cd backend && ./venv/bin/python -m pip install -r requirements.txt"
+]
+
+[start]
+cmd = "cd backend && ./venv/bin/python app.py"
