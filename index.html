@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مشاهدة المسلسلات التركية المدبلجة</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎬 المسلسلات التركية المدبلجة</h1>
+            <p>اختر مسلسلاً، ثم اختر حلقة، وسنقوم بتحميلها وضغطها لجودة 144p لعرضها لك مباشرة</p>
+        </header>
+
+        <div class="main-layout">
+            <aside class="sidebar">
+                <h2>المسلسلات</h2>
+                <div id="series-list" class="list-group"></div>
+            </aside>
+
+            <section class="content">
+                <div id="episodes-section" style="display: none;">
+                    <h2 id="series-title">الحلقات</h2>
+                    <div id="episodes-list" class="list-group horizontal"></div>
+                </div>
+
+                <div id="player-section" style="display: none; margin-top: 30px;">
+                    <h3>المشغل</h3>
+                    <div id="progress-container">
+                        <div id="progress-bar"><div id="progress-fill" style="width: 0%;"></div></div>
+                        <span id="progress-text">0%</span>
+                    </div>
+                    <video id="video-player" controls width="100%" height="auto" style="max-height: 500px; background: #000;"></video>
+                </div>
+
+                <div id="loading" style="display: none; text-align: center; padding: 20px;">
+                    <div class="spinner"></div>
+                    <p>جاري تجهيز الفيديو...</p>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
